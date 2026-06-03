@@ -1,10 +1,13 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Package, Loader2 } from 'lucide-react'
+import { Package, Loader2, Sparkles } from 'lucide-react'
 import Header from '@/components/Header'
 import FilterSidebar from '@/components/FilterSidebar'
 import AccountCard from '@/components/AccountCard'
+import LoadingSkeleton from '@/components/LoadingSkeleton'
+import EmptyState from '@/components/EmptyState'
+import Footer from '@/components/Footer'
 import { fetchAccounts, parseJsonField } from '@/lib/supabase'
 import { Account } from '@/types/account'
 
@@ -41,23 +44,27 @@ export default function Home() {
     loadData()
   }, [loadData])
 
+  // Stats
+  const stats = useMemo(() => {
+    const total = accounts.length
+    const available = accounts.filter(a => a.status === 'Disponível').length
+    const avgAr = total > 0 ? Math.round(accounts.reduce((sum, a) => sum + (a.ar || 0), 0) / total) : 0
+    return { total, available, avgAr }
+  }, [accounts])
+
   // Filtros + Ordenação
   const filtered = useMemo(() => {
     let result = accounts.filter((acc) => {
-      // Status
       if (statusFilter.length > 0 && !statusFilter.includes(acc.status)) {
         return false
       }
-      // Servidor
       if (serverFilter.length > 0 && !serverFilter.includes(acc.server || '')) {
         return false
       }
-      // AR
       const ar = acc.ar || 0
       if (ar < minAr || ar > maxAr) {
         return false
       }
-      // Busca
       if (search.trim()) {
         const term = search.toLowerCase()
         const chars = parseJsonField<{ character_name: string }[]>(acc.characters_json)
@@ -70,7 +77,6 @@ export default function Home() {
       return true
     })
 
-    // Ordenação
     switch (priceSort) {
       case 'price':
         result.sort((a, b) => {
@@ -91,17 +97,29 @@ export default function Home() {
         break
       case 'recent':
       default:
-        // Já vem ordenado do Supabase por updated_at desc
         break
     }
 
     return result
   }, [accounts, search, statusFilter, serverFilter, minAr, maxAr, priceSort])
 
+  const clearAllFilters = () => {
+    setSearch('')
+    setStatusFilter([])
+    setServerFilter([])
+    setMinAr(1)
+    setMaxAr(60)
+    setPriceSort('recent')
+  }
+
   return (
-    <main className="min-h-screen bg-genshin-bg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        <Header />
+    <main className="min-h-screen bg-[var(--bg)] noise-bg">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+        <Header
+          totalAccounts={stats.total}
+          availableCount={stats.available}
+          avgAr={stats.avgAr}
+        />
 
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           {/* Sidebar */}
@@ -123,76 +141,70 @@ export default function Home() {
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            {/* Contador */}
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-genshin-muted text-sm">
-                <Package className="inline w-4 h-4 mr-1 -mt-0.5" />
-                {filtered.length} {filtered.length === 1 ? 'conta encontrada' : 'contas encontradas'}
-              </p>
+            {/* Toolbar */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-purple-400" />
+                <span className="text-slate-400 text-sm">
+                  <span className="text-white font-bold">{filtered.length}</span>
+                  {' '}{filtered.length === 1 ? 'conta' : 'contas'}
+                  {filtered.length !== accounts.length && (
+                    <span className="text-slate-600"> de {accounts.length}</span>
+                  )}
+                </span>
+              </div>
               {lastUpdate && (
-                <p className="text-genshin-muted text-xs">
+                <span className="text-slate-600 text-xs flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
                   Atualizado às {lastUpdate}
-                </p>
+                </span>
               )}
             </div>
 
-            <div className="h-px bg-genshin-border mb-6" />
+            {/* Divider */}
+            <div className="h-px bg-gradient-to-r from-transparent via-purple-500/20 to-transparent mb-6" />
 
             {/* Loading */}
-            {loading && (
-              <div className="flex flex-col items-center justify-center py-20">
-                <Loader2 className="w-10 h-10 text-genshin-accent animate-spin mb-4" />
-                <p className="text-genshin-muted">Carregando contas...</p>
-              </div>
-            )}
+            {loading && <LoadingSkeleton />}
 
             {/* Error */}
             {!loading && error && (
-              <div className="bg-genshin-card border border-genshin-danger/30 rounded-xl p-6 text-center">
-                <p className="text-genshin-danger font-medium mb-2">{error}</p>
+              <div className="glass rounded-2xl p-8 text-center animate-fade-in-up">
+                <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+                  <Loader2 className="w-8 h-8 text-red-400" />
+                </div>
+                <p className="text-red-400 font-medium mb-4">{error}</p>
                 <button
                   onClick={loadData}
-                  className="px-4 py-2 bg-genshin-accent hover:bg-genshin-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-5 py-2.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl text-sm font-medium transition-all"
                 >
                   Tentar novamente
                 </button>
               </div>
             )}
 
-            {/* Empty */}
+            {/* Empty - no accounts at all */}
             {!loading && !error && accounts.length === 0 && (
-              <div className="bg-genshin-card border border-genshin-border rounded-xl p-8 text-center">
-                <p className="text-genshin-muted text-lg mb-2">⚠️ Nenhuma conta disponível no momento.</p>
-                <p className="text-genshin-muted text-sm">
-                  Verifique se o Supabase está configurado corretamente.
-                </p>
-              </div>
+              <EmptyState hasFilters={false} />
             )}
 
-            {/* No results after filter */}
+            {/* Empty - filtered out */}
             {!loading && !error && accounts.length > 0 && filtered.length === 0 && (
-              <div className="bg-genshin-card border border-genshin-border rounded-xl p-8 text-center">
-                <p className="text-genshin-muted">Nenhuma conta encontrada com os filtros selecionados.</p>
-              </div>
+              <EmptyState hasFilters={true} onClearFilters={clearAllFilters} />
             )}
 
             {/* Cards */}
             {!loading && !error && filtered.length > 0 && (
               <div className="space-y-4">
-                {filtered.map((account) => (
-                  <AccountCard key={account.id} account={account} />
+                {filtered.map((account, idx) => (
+                  <AccountCard key={account.id} account={account} index={idx} />
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-genshin-border text-center">
-          <p className="text-genshin-muted text-xs">
-            Genshin Account Manager Pro • Última atualização: {lastUpdate || '--:--:--'}
-          </p>
-        </footer>
+        <Footer />
       </div>
     </main>
   )
@@ -200,14 +212,10 @@ export default function Home() {
 
 function extractPrice(priceStr: string | undefined): number {
   if (!priceStr) return 999999
-  // Remove tudo exceto dígitos e pontos/vírgulas
   const cleaned = priceStr.replace(/[^\d.,]/g, '')
-  // Tenta detectar formato
   if (cleaned.includes(',')) {
-    // Pode ser 1.500,00 ou 1500,00
     const parts = cleaned.split(/[.,]/)
     if (parts.length > 2) {
-      // Formato brasileiro: 1.500,00
       return parseFloat(cleaned.replace(/\./g, '').replace(',', '.')) || 999999
     }
     return parseFloat(cleaned.replace(',', '.')) || 999999
